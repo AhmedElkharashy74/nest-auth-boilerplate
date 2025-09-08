@@ -1,0 +1,95 @@
+// schema.prisma
+datasource db {
+  provider = "postgresql" 
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String?       @unique
+  username      String?       @unique
+  password      String?       
+  name          String?
+  image         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  roles         UserRole[]
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  provider          String   // "google" | "github" | "local"
+  providerAccountId String   
+  type              String   
+  accessToken       String?  
+  refreshToken      String?  
+  expiresAt         DateTime?
+
+  // Relations
+  userId String
+  user   User      @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  expiresAt DateTime
+  
+  // Add these fields for better refresh token management
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+
+model Role {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique // "admin", "editor", "user"
+  users     UserRole[]
+  createdAt DateTime   @default(now())
+
+  RolePermission RolePermission[]
+}
+
+model UserRole {
+  id     Int   @id @default(autoincrement())
+  userId String
+  roleId Int
+
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId])
+}
+
+model Permission {
+  id        Int         @id @default(autoincrement())
+  action    String      // "read", "write", "delete"
+  resource  String      // "article", "user", "comment"
+  roles     RolePermission[]
+}
+
+model RolePermission {
+  id           Int        @id @default(autoincrement())
+  roleId       Int
+  permissionId Int
+
+  role        Role        @relation(fields: [roleId], references: [id])
+  permission  Permission  @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+}
