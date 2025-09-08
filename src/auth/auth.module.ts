@@ -12,6 +12,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { RbacStrategy } from './strategies/rbac.strategy';
 import { JWT_SECRET, JWT_EXPIRES_IN } from '../common/constants/constants.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { SessionsModule } from './sessions/sessions.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PrismaModule } from '../prisma/prisma.module';
       secret: JWT_SECRET,
       signOptions: { expiresIn: JWT_EXPIRES_IN },
     }),
+    SessionsModule,
   ],
   providers: [
     AuthService,

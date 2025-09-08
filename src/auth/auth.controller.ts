@@ -1,62 +1,66 @@
-// auth/auth.controller.ts
-import { Controller, Post, Body, UseGuards, Req, Get, Res } from '@nestjs/common';
+// src/auth/auth.controller.ts
+import { Controller, Post, Body, UseGuards, Get, UsePipes, ValidationPipe, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guards';
-import type { RequestWithUser } from '../common/interfaces/request-with-user.interface';
+import { loginRequestDTO } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refreshToken.dto';
+import { LogoutSessionDto } from './dto/logout.dto';
+import { CurrentUser } from './decorators/current-user.decorator';
+import { User } from '../users/entities/user.entity';
+import type { RequestWithUser } from 'src/common/interfaces/request-with-user.interface';
+import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
+import { ProfileResponseDto } from './dto/auth-tokens-response.dto';
 
 @Controller('auth')
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@Req() req: RequestWithUser) {
-    return this.authService.login(req.user);
+  async login(@Body() _: loginRequestDTO, @CurrentUser() user: User): Promise<AuthTokensResponseDto> {
+    return this.authService.login(user);
   }
 
   @Post('register')
-  async register(
-    @Body() userData: { email: string; password: string; username?: string; name?: string },
-  ) {
+  async register(@Body() userData: { email: string; password: string; username?: string; name?: string }): Promise<AuthTokensResponseDto> {
     const user = await this.authService.register(userData);
     return this.authService.login(user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('profile')
-  getProfile(@Req() req: RequestWithUser) {
-    const { password, ...user } = req.user;
-    return user;
+  getProfile(@Req() req: RequestWithUser): ProfileResponseDto {
+    return new ProfileResponseDto(req.user);
   }
 
-  @Get('google')
-  async googleAuth() {
-    // Initiates Google OAuth flow
+  @Post('refresh')
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<AuthTokensResponseDto> {
+    return this.authService.refreshAccessToken(refreshTokenDto.refresh_token);
   }
 
-  @Get('google/callback')
-  async googleAuthRedirect(@Req() req, @Res() res) {
-    // Handles Google OAuth callback
-    const user = req.user;
-    const jwt = await this.authService.login(user);
-    
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${jwt.access_token}`);
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@Body() refreshTokenDto: RefreshTokenDto) {
+    return this.authService.logout(refreshTokenDto.refresh_token);
   }
 
-  @Get('github')
-  async githubAuth() {
-    // Initiates GitHub OAuth flow
+  @UseGuards(JwtAuthGuard)
+  @Post('logout-session')
+  async logoutSession(@Body() logoutSessionDto: LogoutSessionDto) {
+    return this.authService.logoutSession(logoutSessionDto.session_id);
   }
 
-  @Get('github/callback')
-  async githubAuthRedirect(@Req() req, @Res() res) {
-    // Handles GitHub OAuth callback
-    const user = req.user;
-    const jwt = await this.authService.login(user);
-    
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${jwt.access_token}`);
+  @UseGuards(JwtAuthGuard)
+  @Post('logout-all')
+  async logoutAll(@CurrentUser() user: User) {
+    return this.authService.logoutAll(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('sessions')
+  async getSessions(@CurrentUser() user: User) {
+    return this.authService.getUserSessions(user.id);
   }
 }
