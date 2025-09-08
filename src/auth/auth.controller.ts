@@ -6,7 +6,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guards';
 import { loginRequestDTO } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refreshToken.dto';
 import { LogoutSessionDto } from './dto/logout.dto';
-import { CurrentUser } from './decorators/current-user.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
 import type { RequestWithUser } from 'src/common/interfaces/request-with-user.interface';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
