@@ -19,8 +19,13 @@ export class AuthController {
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@Body() _: loginRequestDTO, @CurrentUser() user: User): Promise<AuthTokensResponseDto> {
+    async login(@Body() _: loginRequestDTO, @CurrentUser() user: User): Promise<AuthTokensResponseDto> {
     return this.authService.login(user);
+  }
+
+  @Post('google/callback')
+    async googleCallback(@Body('idToken') idToken: string) {
+    return this.authService.googleLogin(idToken);
   }
 
   @Post('register')

@@ -6,16 +6,21 @@ import { UsersService } from '../users/user.service';
 import { BCRYPT_ROUNDS } from '../common/constants/constants.module';
 import { SessionsService } from './sessions/session.service';
 import { randomBytes, createHash } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
 import ms from 'ms';
 
 @Injectable()
 export class AuthService {
+  private googleClient;
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
     private sessionsService: SessionsService,
-  ) {}
+  ) {
+    this.googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+  }
 
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.usersService.findByEmail(email);
@@ -31,16 +36,17 @@ export class AuthService {
 
   async validateOAuthUser(profile: any, provider: string) {
     let user = await this.usersService.findByEmail(profile.email);
-  
+
     if (!user) {
       user = await this.usersService.create({
         email: profile.email,
         username: profile.username || profile.email.split('@')[0],
         name: profile.name,
         image: profile.picture,
+        // provider,
       });
     }
-  
+
     return user;
   }
 
@@ -61,6 +67,33 @@ export class AuthService {
       session_id: refreshToken.id,
       user,
     });
+  }
+
+  async verifyGoogleToken(idToken: string) {
+    const ticket = await this.googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload) throw new UnauthorizedException('Invalid Google token');
+
+    return {
+      email: payload.email,
+      name: payload.name,
+      picture: payload.picture,
+    };
+  }
+
+  async googleLogin(idToken: string): Promise<AuthTokensResponseDto> {
+    // 1. Verify with Google
+    const profile = await this.verifyGoogleToken(idToken);
+
+    // 2. Find/create user
+    const user = await this.validateOAuthUser(profile, 'google');
+
+    // 3. Issue your JWT + refresh token
+    return this.login(user);
   }
 
   private async generateRefreshToken(userId: string) {
