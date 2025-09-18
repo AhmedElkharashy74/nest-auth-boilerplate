@@ -53,7 +53,37 @@ export class UsersService {
     
     return this.mapPrismaUserToEntity(user);
   }
-
+  async upsertAccount(userId: string, accountData: {
+    provider: string;
+    providerAccountId: string;
+    type: string;
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: Date;
+    }) {
+    return this.prisma.account.upsert({
+    where: {
+    provider_providerAccountId: {
+    provider: accountData.provider,
+    providerAccountId: accountData.providerAccountId,
+    },
+    },
+    update: {
+    accessToken: accountData.accessToken,
+    refreshToken: accountData.refreshToken,
+    expiresAt: accountData.expiresAt,
+    },
+    create: {
+    provider: accountData.provider,
+    providerAccountId: accountData.providerAccountId,
+    type: accountData.type,
+    accessToken: accountData.accessToken,
+    refreshToken: accountData.refreshToken,
+    expiresAt: accountData.expiresAt,
+    user: { connect: { id: userId } },
+    },
+    });
+    }
   async findByEmail(email: string): Promise<User | null> {
     const user = await this.prisma.user.findUnique({
       where: { email },

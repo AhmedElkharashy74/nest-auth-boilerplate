@@ -1,5 +1,6 @@
-// src/auth/auth.service.ts
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+
+// FILE: src/auth/auth.service.ts
+import { Injectable, UnauthorizedException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/user.service';
@@ -12,16 +13,21 @@ import ms from 'ms';
 
 @Injectable()
 export class AuthService {
-  private googleClient;
+  private googleClient: OAuth2Client;
 
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
     private sessionsService: SessionsService,
   ) {
-    this.googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    this.googleClient = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_CALLBACK_URL,
+    );
   }
 
+  // ---------- local helpers (unchanged) ----------
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.usersService.findByEmail(email);
     if (user && user.password) {
@@ -43,9 +49,18 @@ export class AuthService {
         username: profile.username || profile.email.split('@')[0],
         name: profile.name,
         image: profile.picture,
-        // provider,
       });
     }
+
+    // upsert account record
+    await this.usersService.upsertAccount(user.id, {
+      provider,
+      providerAccountId: profile.sub || profile.providerId || profile.email,
+      type: 'oauth',
+      accessToken: profile.accessToken,
+      refreshToken: profile.refreshToken,
+      expiresAt: profile.expiresAt ? new Date(profile.expiresAt * 1000) : undefined,
+    });
 
     return user;
   }
@@ -69,31 +84,42 @@ export class AuthService {
     });
   }
 
-  async verifyGoogleToken(idToken: string) {
-    const ticket = await this.googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+  // ---------- Google server-side flow helpers ----------
+  generateGoogleAuthUrl(): string {
+    // ask for offline access to receive refresh_token
+    return this.googleClient.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: ['openid', 'profile', 'email'],
     });
-
-    const payload = ticket.getPayload();
-    if (!payload) throw new UnauthorizedException('Invalid Google token');
-
-    return {
-      email: payload.email,
-      name: payload.name,
-      picture: payload.picture,
-    };
   }
 
-  async googleLogin(idToken: string): Promise<AuthTokensResponseDto> {
-    // 1. Verify with Google
-    const profile = await this.verifyGoogleToken(idToken);
+  async handleGoogleCallback(code: string): Promise<AuthTokensResponseDto> {
+    try {
+      const { tokens } = await this.googleClient.getToken(code);
+      if (!tokens.id_token) throw new UnauthorizedException('No id_token returned from Google');
 
-    // 2. Find/create user
-    const user = await this.validateOAuthUser(profile, 'google');
+      // verify id token to get payload
+      const ticket = await this.googleClient.verifyIdToken({ idToken: tokens.id_token, audience: process.env.GOOGLE_CLIENT_ID });
+      const payload = ticket.getPayload();
+      if (!payload) throw new UnauthorizedException('Invalid Google token');
 
-    // 3. Issue your JWT + refresh token
-    return this.login(user);
+      const profile = {
+        email: payload.email,
+        name: payload.name,
+        picture: payload.picture,
+        sub: payload.sub,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: tokens.expiry_date ? Math.floor(tokens.expiry_date / 1000) : undefined,
+      };
+
+      const user = await this.validateOAuthUser(profile, 'google');
+
+      return this.login(user);
+    } catch (err) {
+      throw new InternalServerErrorException('Failed to handle Google callback');
+    }
   }
 
   private async generateRefreshToken(userId: string) {
